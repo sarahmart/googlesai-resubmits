@@ -7,8 +7,10 @@ et al. (2026), [arXiv:2605.16238](https://arxiv.org/abs/2605.16238).
 
 [COVIDHub is out of scope: that submission is already live and not treated here.]
 
-The published GoogleHub archive supplies the forecasting models but not the pipeline
-around them. This repository supplies it, from public sources only.
+The published GoogleHub archive supplies the forecasting models.
+
+**Influenza only for now.** The RSV models are vendored and patched, but the RSV
+data path is not yet implemented. TODO
 
 ## Layout
 
@@ -17,7 +19,7 @@ around them. This repository supplies it, from public sources only.
 | `models/upstream/` | Pinned, unmodified copy of the ERA model archive (`models/UPSTREAM_SHA`) |
 | `models/patched/` | Generated runnable models — gitignored, never hand-edit |
 | `pipeline/` | Data preparation, model runner, ensemble, validation |
-| `config/` | Per-hub settings and the ensemble component list |
+| `config/` | Per-hub settings and the ensemble component list (`flu.yaml`) |
 | `tests/` | Regression tests |
 
 ## Setup
@@ -53,6 +55,16 @@ python pipeline/validate_submission.py --pathogen flu --reference_date 2026-11-2
     --submission data/ensemble/flu/2026-11-21-Google_SAI-FluEns.csv
 ```
 
+## Tests
+
+```bash
+./.venv/bin/python -m pytest tests/
+```
+
+`test_vendoring.py` checks every vendored file against the sha256 manifest, so a
+stray edit under `models/upstream/` fails here. `test_ensemble_rule.py` rebuilds
+a 2025-26 ensemble from its archived components and pins the aggregation rule.
+
 ## Runtime configuration
 
 Patched models read their configuration from the environment and raise on
@@ -66,4 +78,3 @@ from the wrong inputs.
 | `EPI_REFERENCE_DATE` | Forecast reference date; must be a Saturday |
 | `EPI_RUN_VALIDATION` | `1` to run each model's in-built rolling validation (default off) |
 | `EPI_PLOTTING` | `1` to emit diagnostic plots (default off) |
-
