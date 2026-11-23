@@ -18,6 +18,7 @@ import argparse
 import io
 import json
 import pathlib
+import sys
 
 import pandas as pd
 import requests
@@ -196,21 +197,44 @@ def build_grid(admissions, locations, pathogen, start_date):
   return result
 
 
+HUB_DIRS = {'flu': 'flu_hub', 'rsv': 'rsv_hub'}
+
+
+def load_constant_defs(repo_root, pathogen):
+  """The hub's own `constant_defs`, so the jurisdiction list has one source.
+
+  Resolved from the patched tree here rather than left to the caller's
+  PYTHONPATH, matching `run_model.py`: the required-locations list and the
+  target name must come from the same module the models themselves import, or
+  the inputs can disagree with the code that reads them.
+  """
+  hub_dir = repo_root / 'models' / 'patched' / HUB_DIRS[pathogen]
+  if not (hub_dir / 'constant_defs.py').is_file():
+    raise FileNotFoundError(
+        f'{hub_dir / "constant_defs.py"} not found. Run'
+        ' `python pipeline/patch_models.py` first to generate models/patched/.')
+  sys.path.insert(0, str(hub_dir))
+  import constant_defs
+  if constant_defs.TARGET_STR != TARGET_NAMES[pathogen]:
+    raise ValueError(
+        f'{hub_dir} supplies constant_defs for {constant_defs.TARGET_STR!r},'
+        f' not {TARGET_NAMES[pathogen]!r}.')
+  return constant_defs
+
+
 def main():
+  root = pathlib.Path(__file__).resolve().parent.parent
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--pathogen', choices=IMPLEMENTED_PATHOGENS, required=True)
   parser.add_argument('--out_dir', type=pathlib.Path, required=True,
                       help='becomes EPI_INPUT_DIR for the patched models')
   parser.add_argument('--start_date', default='2020-10-01',
                       help='first NHSN week to retain')
+  parser.add_argument('--repo_root', type=pathlib.Path, default=root)
   args = parser.parse_args()
 
-  import constant_defs
-  required = constant_defs.REQUIRED_CDC_LOCATIONS
-  if constant_defs.TARGET_STR != TARGET_NAMES[args.pathogen]:
-    raise ValueError(
-        f'constant_defs on sys.path is for {constant_defs.TARGET_STR!r}, not'
-        f' {TARGET_NAMES[args.pathogen]!r}; point PYTHONPATH at the right hub.')
+  required = load_constant_defs(args.repo_root,
+                                args.pathogen).REQUIRED_CDC_LOCATIONS
 
   hub_locations, locations = load_locations(args.pathogen, required)
   admissions = fetch_admissions(locations)
