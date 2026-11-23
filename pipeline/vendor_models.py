@@ -1,4 +1,5 @@
-"""Reproduce the ERA model archive from a pinned upstream commit on GoogleHub.
+"""Reproduce the ERA model archive from a pinned upstream commit on GoogleHub:
+`https://github.com/google-research/google-research/tree/master/epi_forecasts`.
 
 This script creates / refreshes `models/upstream/`: it fetches every file from one
 immutable commit and writes `UPSTREAM_SHA` and `UPSTREAM_MANIFEST.txt` from the fetch.
