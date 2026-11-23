@@ -14,7 +14,7 @@ import pytest
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / 'pipeline'))
 
-import pipeline.patch_models as patch_models  # noqa: E402
+import patch_models  # noqa: E402
 
 
 def _manifest():
