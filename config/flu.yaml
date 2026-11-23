@@ -1,0 +1,57 @@
+# FluSight (influenza) hub settings.
+hub:
+  name: FluSight
+  repo: cdcepi/FluSight-forecast-hub
+  model_id: Google_SAI-FluEns
+  target: wk inc flu hosp
+  horizons: [0, 1, 2, 3]
+  # Deadline is day -3 relative to the reference date (i.e., Wednesday), 23:00 US/Eastern.
+  submission_due_offset_days: -3
+
+ensemble:
+  # Equal-weight mean of component quantiles, grouped on
+  # (location, horizon, output_type_id).
+  method: quantile_mean
+
+  # Two phase-specific sets, switched once the season has passed its peak.
+  # Rationale: on 2025-26 the components chosen on the ascent and on the decline
+  # overlap only 4 of 7, and a decline-tuned set scores ~17% worse log WIS
+  # during ascent. Switch timing is forgiving - every lag from 0 to 8 weeks
+  # after the peak beat a single broad ensemble, and the best lag was 3 weeks
+  # AFTER the peak, so the switch need not be prompt or precise.
+  phase: ascent          # <- change to `decline` once the peak has passed
+  components_by_phase:
+    # Selected on 2025-12-13..2026-01-17 (ascent through peak), 15-model pool.
+    # Bootstrap over reference dates: each of these appears in >=90% of
+    # resampled selections. Adapted_4 was the 7th greedy pick but appears in
+    # only 21%, so it is omitted as noise; Hybrid_4 (44%) is the next candidate
+    # if the set is widened.
+    ascent:
+      - Google_SAI-Hybrid_1
+      - Google_SAI-Adapted_10
+      - Google_SAI-Adapted_9
+      - Google_SAI-Hybrid_3
+      - Google_SAI-Adapted_8
+      - Google_SAI-Adapted_7
+    # Selected on 2026-01-24..2026-05-30 with a three-way split (order/size/
+    # report); block C, never consulted during selection, gave 0.27126 against
+    # 0.28333 for last season's submitted five and 0.28365 for all 33.
+    decline:
+      - Google_SAI-Hybrid_5
+      - Google_SAI-Adapted_9
+      - Google_SAI-Adapted_23
+      - Google_SAI-Adapted_10
+      - Google_SAI-Adapted_11
+      - Google_SAI-Novel_1
+      - Google_SAI-Adapted_8
+
+  # Excluded outright: 2025-26 relative log WIS 14.3 against a field around 1.0.
+  excluded:
+    - Google_SAI-Adapted_16
+
+# Known limitations of the above, to revisit once this season has data:
+#   - Membership only; component weights were never searched. The paper's own
+#     Discussion flags adaptive weighting as the obvious next step.
+#   - One season of evidence, from an already survivor-biased candidate pool.
+#   - Phase is a binary on the national curve; states peak at different weeks.
+#   - The ascent set rests on 6 reference dates and a 15-model pool.
