@@ -1,0 +1,21 @@
+# RSVHub settings.
+hub:
+  name: RSVHub
+  repo: CDCgov/rsv-forecast-hub
+  model_id: Google_SAI-RSVEns
+  target: wk inc rsv hosp
+  horizons: [0, 1, 2, 3]
+  submission_due_offset_days: -3
+
+ensemble:
+  method: quantile_mean
+  # 2025-26 pairwise relative log WIS, anchored so RSVHub-ensemble = 1.00:
+  #   Google_SAI-Novel_2  0.942     Google_SAI-Novel_1  0.998
+  #   their mean (as submitted, Google_SAI-RSVEns)      0.921
+  #
+  # Coverage: both models scored over 4576 tasks (22 reference dates x 52
+  # jurisdictions x 4 horizons), which is the whole subnational task space and
+  # clears the 80% eligibility bar applied to influenza.
+  components:
+    - Google_SAI-Novel_1
+    - Google_SAI-Novel_2

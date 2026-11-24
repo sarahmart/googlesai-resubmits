@@ -47,7 +47,15 @@ TARGET_NAMES = {
 # concurrent influenza and COVID-19 admissions as auxiliary inputs, and the
 # RSV main() also reads the influenza column directly.
 DATASET_COLUMNS = {'flu': ('flu',), 'rsv': ('rsv', 'flu', 'covid')}
-IMPLEMENTED_PATHOGENS = ('flu',)
+
+# NSSP emergency-department visit trajectories, the source of the
+# `percent_visits_rsv` column the RSV models read. 
+NSSP_RESOURCE = 'https://data.cdc.gov/resource/rdmq-nq56.csv'
+NSSP_METADATA = 'https://data.cdc.gov/api/views/rdmq-nq56.json'
+NSSP_COLUMN = 'percent_visits_rsv'
+# Jurisdiction rows, as opposed to the sub-state regions in the same dataset.
+NSSP_WHERE = "county = 'All'"
+IMPLEMENTED_PATHOGENS = ('flu', 'rsv')
 REQUEST_TIMEOUT = 120
 
 
@@ -197,6 +205,66 @@ def build_grid(admissions, locations, pathogen, start_date):
   return result
 
 
+def fetch_nssp(locations):
+  """NSSP emergency-department RSV visit percentages, one row per jurisdiction."""
+  expected = int(_get(NSSP_RESOURCE.replace('.csv', '.json'),
+                      params={'$select': 'count(1)',
+                              '$where': NSSP_WHERE}).json()[0]['count_1'])
+  frame = pd.read_csv(io.StringIO(_get(NSSP_RESOURCE, params={
+      '$select': f'week_end,geography,{NSSP_COLUMN}',
+      '$where': NSSP_WHERE,
+      '$limit': str(expected + 1),
+  }).text))
+  if len(frame) != expected:
+    raise ValueError(
+        f'NSSP returned {len(frame):,} rows but reports {expected:,};'
+        ' the response was truncated or the dataset changed mid-fetch.')
+
+  frame['target_end_date'] = pd.to_datetime(frame.week_end).dt.date
+  days = set(pd.to_datetime(frame.week_end).dt.dayofweek)
+  if days != {5}:
+    raise ValueError(
+        f'NSSP week_end values are not all Saturdays (weekdays seen: {days});'
+        ' they would not align with the NHSN weekly grid.')
+
+  # Upstream joins NSSP `geography` to the hub's `location_name`.
+  merged = frame.merge(locations[['location', 'location_name']],
+                       left_on='geography', right_on='location_name',
+                       how='inner')
+  if merged.duplicated(['location', 'target_end_date']).any():
+    n = int(merged.duplicated(['location', 'target_end_date']).sum())
+    raise ValueError(f'NSSP has {n} duplicate (jurisdiction, week) rows')
+  return merged[['location', 'target_end_date', NSSP_COLUMN]]
+
+
+def attach_nssp(dataset, locations):
+  """Add the NSSP column to the NHSN grid, left so the grid stays intact.
+
+  Upstream outer-joins. A left join is equivalent while the two series cover the
+  same weeks, and it keeps the (jurisdiction x week) grid this module asserts on
+  from being silently extended by an NSSP-only week.
+
+  Jurisdictions absent from NSSP are returned rather than raised on: NSSP
+  publishes no Puerto Rico, which the RSV hub nonetheless solicits.
+  """
+  nssp = fetch_nssp(locations)
+  # build_grid leaves `location` as an integer FIPS code; the hub file and so
+  # the NSSP join key are zero-padded strings.
+  nssp = nssp.assign(location=nssp.location.astype(int))
+  before = len(dataset)
+  merged = dataset.merge(nssp, on=['location', 'target_end_date'], how='left')
+  if len(merged) != before:
+    raise ValueError(
+        f'attaching NSSP changed the row count from {before:,} to'
+        f' {len(merged):,}; the join is not one-to-one.')
+
+  covered = set(nssp.location)
+  absent = sorted(int(x) for x in set(dataset.location) - covered)
+  weeks_with_data = (merged.loc[merged[NSSP_COLUMN].notna(), 'target_end_date']
+                     .nunique())
+  return merged, absent, weeks_with_data
+
+
 HUB_DIRS = {'flu': 'flu_hub', 'rsv': 'rsv_hub'}
 
 
@@ -241,6 +309,13 @@ def main():
   dataset = build_grid(admissions, locations, args.pathogen,
                        pd.to_datetime(args.start_date).date())
 
+  nssp = None
+  if args.pathogen == 'rsv':
+    dataset, absent, nssp_weeks = attach_nssp(dataset, locations)
+    nssp = {'resource': NSSP_RESOURCE, 'column': NSSP_COLUMN,
+            'weeks_with_values': nssp_weeks,
+            'jurisdictions_without_nssp': absent}
+
   args.out_dir.mkdir(parents=True, exist_ok=True)
   # The hub's own file, US row included - see load_locations for why.
   hub_locations.to_csv(args.out_dir / 'locations.csv', index=False)
@@ -250,12 +325,23 @@ def main():
   provenance.update({'pathogen': args.pathogen, 'rows': len(dataset),
                      'jurisdictions': len(locations),
                      'first_week': str(weeks[0]), 'last_week': str(weeks[-1])})
+  if nssp is not None:
+    provenance['nssp'] = nssp
   (args.out_dir / 'provenance.json').write_text(json.dumps(provenance, indent=2))
   print(f'{args.pathogen}: {len(dataset):,} rows, {len(locations)} jurisdictions, '
         f'{len(weeks)} weeks {weeks[0]}..{weeks[-1]}')
   print(f'  wrote {args.out_dir / "locations.csv"}')
   print(f'  wrote {args.out_dir / "dataset.csv"}')
   print(f'  NHSN vintage: {provenance["rows_updated_at"]}')
+  if nssp is not None:
+    print(f'  NSSP {NSSP_COLUMN}: values for {nssp["weeks_with_values"]} of'
+          f' {len(weeks)} weeks')
+    if nssp['jurisdictions_without_nssp']:
+      named = ', '.join(
+          sorted(locations.loc[locations.location.astype(int).isin(
+              nssp['jurisdictions_without_nssp']), 'location_name']))
+      print(f'  NSSP has no data for {named}; those jurisdictions are still'
+            ' forecast, with the models substituting 0.0 for this feature.')
 
 
 if __name__ == '__main__':

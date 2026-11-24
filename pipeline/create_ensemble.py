@@ -20,13 +20,23 @@ def load_config(repo_root, pathogen):
   config = yaml.safe_load(
       (repo_root / 'config' / f'{pathogen}.yaml').read_text())
   ensemble = config['ensemble']
+  if ensemble['method'] != 'quantile_mean':
+    raise ValueError(f'unsupported ensemble method {ensemble["method"]!r}')
+
+  # Two shapes, because the pathogens differ
+  by_phase = ensemble.get('components_by_phase')
+  flat = ensemble.get('components')
+  if (by_phase is None) == (flat is None):
+    raise ValueError(
+        f'config/{pathogen}.yaml must set exactly one of `components` or'
+        ' `components_by_phase` under `ensemble`.')
+  if flat is not None:
+    return config['hub'], list(flat), 'all phases'
+
   phase = ensemble['phase']
-  by_phase = ensemble['components_by_phase']
   if phase not in by_phase:
     raise ValueError(
         f'phase {phase!r} has no component list; have {sorted(by_phase)}')
-  if ensemble['method'] != 'quantile_mean':
-    raise ValueError(f'unsupported ensemble method {ensemble["method"]!r}')
   return config['hub'], by_phase[phase], phase
 
 

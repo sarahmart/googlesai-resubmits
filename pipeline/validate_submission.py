@@ -21,8 +21,10 @@ HUB_LOCATIONS = {
     'rsv': 'https://raw.githubusercontent.com/CDCgov/rsv-forecast-hub/'
            'main/auxiliary-data/locations.csv',
 }
-# validations.yml: cstm_check_tbl_value_max_popn_frac, popn_frac 0.001
-POPULATION_FRACTION_CAP = 0.001
+# Taken from each hub's own hub-config/validations.yml. 
+# FluSight configures cstm_check_tbl_value_max_popn_frac with
+# popn_frac 0.005. RSVHub enforces no population-fraction bound.
+POPULATION_FRACTION_CAP = {'flu': 0.005, 'rsv': None}
 TARGETS = {'flu': 'wk inc flu hosp', 'rsv': 'wk inc rsv hosp'}
 
 
@@ -78,11 +80,12 @@ def check(frame, pathogen, reference_date, populations):
   over_population = merged.value > merged.population
   require(not over_population.any(),
           f'{int(over_population.sum())} values exceed the location population')
-  cap = merged.population * POPULATION_FRACTION_CAP
-  over_cap = merged.value > cap
-  require(not over_cap.any(),
-          f'{int(over_cap.sum())} values exceed {POPULATION_FRACTION_CAP} x population '
-          f'(max ratio {(merged.value / merged.population).max():.6f})')
+  popn_frac = POPULATION_FRACTION_CAP[pathogen]
+  if popn_frac is not None:
+    over_cap = merged.value > merged.population * popn_frac
+    require(not over_cap.any(),
+            f'{int(over_cap.sum())} values exceed {popn_frac} x population '
+            f'(max ratio {(merged.value / merged.population).max():.6f})')
   return failures
 
 
