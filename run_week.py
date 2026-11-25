@@ -27,6 +27,20 @@ HUB_PATHS = {
 }
 
 
+def play_completion_sound():
+  """Play a short notification for end of run."""
+  if sys.platform == 'darwin':
+    try:
+      played = subprocess.run(
+          ['/usr/bin/afplay', '/System/Library/Sounds/Glass.aiff'],
+          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+      if played.returncode == 0:
+        return
+    except OSError:
+      pass
+  print('\a', end='', flush=True)
+
+
 def components(repo_root, pathogen):
   """The component list for this pathogen, from its config."""
   ensemble = yaml.safe_load(
@@ -136,6 +150,7 @@ def main():
 
 Review the figure before pushing: the fan should continue the observed trend,
 not collapse. """)
+  play_completion_sound()
 
 
 if __name__ == '__main__':
